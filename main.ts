@@ -69,14 +69,14 @@ const randomWordMessage = async (): Promise<string> => {
   }
   // ${word.meanings?.[0].definitions?.[0].definition}
   return (
-    `${word.word}:\n` +
+    `${word.word}:\n  -` +
     word.meanings
       .map(
         (meaning) =>
-          `\`${meaning.partOfSpeech}\`` +
-          meaning.definitions.map((def) => def.definition).join("\n    ")
+          `\`${meaning.partOfSpeech}\`:\n    -` +
+          meaning.definitions.map((def) => def.definition).join("\n    -")
       )
-      .join("\n  ")
+      .join("\n  -")
   );
 };
 
