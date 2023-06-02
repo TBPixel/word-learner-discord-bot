@@ -67,8 +67,17 @@ const randomWordMessage = async (): Promise<string> => {
     console.error(`what???? MA'AAMM???`);
     return randomWordMessage();
   }
-
-  return `${word.word}: ${word.meanings?.[0].definitions?.[0].definition}`;
+  // ${word.meanings?.[0].definitions?.[0].definition}
+  return (
+    `${word.word}:\n` +
+    word.meanings
+      .map(
+        (meaning) =>
+          `\`${meaning.partOfSpeech}\`` +
+          meaning.definitions.map((def) => def.definition).join("\n    ")
+      )
+      .join("\n  ")
+  );
 };
 
 const bot = createBot({
