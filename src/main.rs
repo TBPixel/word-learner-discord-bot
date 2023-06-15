@@ -64,16 +64,12 @@ impl EventHandler for Handler {
     // Event handlers are dispatched through a threadpool, and so multiple
     // events can be dispatched simultaneously.
     async fn message(&self, ctx: Context, msg: Message) {
-        // handling messages from bots would be a bad idea
-        if msg.author.bot {
-            return;
-        }
-
         if !msg.mentions_me(&ctx.http).await.unwrap_or(false) {
             return;
         }
 
-        let command: Vec<&str> = msg.content.split(" ").collect();
+        let mut command: Vec<&str> = msg.content.split(" ").collect();
+        command.remove(0);
         if let Some(cmd) = command.first() {
             match *cmd {
                 "help" => {
@@ -101,7 +97,7 @@ impl EventHandler for Handler {
                     },
                     None => println!("<word> input is required!"),
                 },
-                _ => {}
+                input => println!("unknown command {}", input),
             }
         }
     }
