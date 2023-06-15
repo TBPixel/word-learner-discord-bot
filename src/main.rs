@@ -25,11 +25,21 @@ mod words;
 
 struct Handler {
     words_file_path: PathBuf,
+    total_lines: u64,
+}
+
+impl Handler {
+    fn new(file_path: &PathBuf) -> Result<Handler> {
+        Ok(Handler {
+            words_file_path: file_path.clone(),
+            total_lines: words::get_line_count(file_path)?,
+        })
+    }
 }
 
 #[async_recursion]
 async fn send_new_word(handler: &Handler, ctx: Context, msg: Message) {
-    match words::get_random_word(&handler.words_file_path).await {
+    match words::get_random_word(&handler.words_file_path, handler.total_lines).await {
         Ok(w) => send_word(ctx, msg, w).await,
         Err(_) => send_new_word(handler, ctx, msg).await,
     }
@@ -136,10 +146,9 @@ async fn main() -> Result<()> {
     // Create a new instance of the Client, logging in as a bot. This will
     // automatically prepend your bot token with "Bot ", which is a requirement
     // by Discord for bot users.
+    let handler = Handler::new(&env::current_dir()?.join("words_alpha.txt"))?;
     let mut client = Client::builder(&token, intents)
-        .event_handler(Handler {
-            words_file_path: env::current_dir()?.join("words_alpha.txt"),
-        })
+        .event_handler(handler)
         .await
         .wrap_err("Err creating client")?;
 

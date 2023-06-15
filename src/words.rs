@@ -2,8 +2,7 @@ use color_eyre::eyre::ContextCompat;
 use color_eyre::Result;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::fs::File;
-use std::io::{self, BufRead};
+use std::io;
 use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -26,24 +25,47 @@ pub struct Definition {
     pub definition: String,
 }
 
-fn get_random_line(file_path: &PathBuf) -> io::Result<String> {
-    // Open the file
-    let file = File::open(file_path)?;
-    let reader = io::BufReader::new(file);
+pub fn get_line_count(file_path: &PathBuf) -> io::Result<u64> {
+    let mut reader = reader::BufReader::open(file_path)?;
+    let mut buffer = String::new();
+    let mut count: u64 = 0;
 
-    // Read the lines into a vector
-    let lines: Vec<_> = reader.lines().collect::<io::Result<_>>()?;
+    while let Some(_) = reader.read_line(&mut buffer) {
+        count += 1;
+    }
+
+    Ok(count)
+}
+
+fn get_random_line(file_path: &PathBuf, total_lines: u64) -> io::Result<String> {
+    // Open the file
+    let mut reader = reader::BufReader::open(file_path)?;
+    let mut buffer = String::new();
+    let mut current_index: u64 = 0;
 
     // Generate a random index
     let mut rng = rand::thread_rng();
-    let index = rng.gen_range(0..lines.len());
+    let target_index = rng.gen_range(0..total_lines);
+    let mut word = String::new();
 
-    // Return the random line
-    Ok(lines[index].trim().to_string())
+    while let Some(line) = reader.read_line(&mut buffer) {
+        if current_index != target_index {
+            current_index += 1;
+            continue;
+        }
+
+        if let Ok(w) = line {
+            word = w.clone();
+        }
+
+        break;
+    }
+
+    Ok(word.trim().to_string())
 }
 
-pub async fn get_random_word(file_path: &PathBuf) -> Result<WordDefinition> {
-    let word = get_random_line(file_path)?;
+pub async fn get_random_word(file_path: &PathBuf, total_lines: u64) -> Result<WordDefinition> {
+    let word = get_random_line(file_path, total_lines)?;
 
     get_word(&word).await
 }
@@ -57,4 +79,36 @@ pub async fn get_word(word: &str) -> Result<WordDefinition> {
     .await?;
 
     Ok(body.first().wrap_err("word not found")?.clone())
+}
+
+mod reader {
+    use std::{
+        fs::File,
+        io::{self, prelude::*},
+    };
+
+    pub struct BufReader {
+        reader: io::BufReader<File>,
+    }
+
+    impl BufReader {
+        pub fn open(path: impl AsRef<std::path::Path>) -> io::Result<Self> {
+            let file = File::open(path)?;
+            let reader = io::BufReader::new(file);
+
+            Ok(Self { reader })
+        }
+
+        pub fn read_line<'buf>(
+            &mut self,
+            buffer: &'buf mut String,
+        ) -> Option<io::Result<&'buf mut String>> {
+            buffer.clear();
+
+            self.reader
+                .read_line(buffer)
+                .map(|u| if u == 0 { None } else { Some(buffer) })
+                .transpose()
+        }
+    }
 }
