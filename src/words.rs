@@ -71,6 +71,8 @@ pub async fn get_random_word(file_path: &PathBuf, total_lines: u64) -> Result<Wo
 }
 
 pub async fn get_word(word: &str) -> Result<WordDefinition> {
+    let buf = &mut String::new();
+    let word = url_escape::encode_path_to_string(word, buf);
     let body = reqwest::get(format!(
         "https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
     ))
