@@ -1,2 +1,5 @@
 .env
 .vscode/
+
+# Added by cargo
+/target
