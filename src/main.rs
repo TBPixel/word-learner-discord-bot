@@ -9,6 +9,7 @@
 )]
 #![allow(clippy::use_self)] // disabling use_self lints due to a bug where proc-macro's (such as serde::Serialize) can trigger it to hinted on type definitions
 
+use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
 
@@ -26,6 +27,7 @@ mod words;
 struct Handler {
     words_file_path: PathBuf,
     total_lines: u64,
+    nicknames: RwLock<HashMap<UserId, String>>,
 }
 
 impl Handler {
@@ -33,6 +35,7 @@ impl Handler {
         Ok(Handler {
             words_file_path: file_path.to_path_buf(),
             total_lines: words::get_line_count(file_path)?,
+            nicknames: RwLock::new(HashMap::new()),
         })
     }
 }
@@ -40,12 +43,12 @@ impl Handler {
 #[async_recursion]
 async fn send_new_word(handler: &Handler, ctx: Context, msg: Message) {
     match words::get_random_word(&handler.words_file_path, handler.total_lines).await {
-        Ok(w) => send_word(ctx, msg, w).await,
+        Ok(w) => send_word(handler, ctx, msg, w).await,
         Err(_) => send_new_word(handler, ctx, msg).await,
     }
 }
 
-async fn send_word(ctx: Context, msg: Message, w: WordDefinition) {
+async fn send_word(handler: &Handler, ctx: Context, msg: Message, w: WordDefinition) {
     let meanings = w
         .meanings
         .iter()
@@ -60,7 +63,13 @@ async fn send_word(ctx: Context, msg: Message, w: WordDefinition) {
             )
         })
         .collect::<String>();
-    let body = format!("_**{}**_:\n{}", w.word, meanings);
+
+    let nicknames = handler.nicknames.read().await;
+    let formality = match nicknames.get(&msg.author.id) {
+        Some(name) => format!("\n\nDoes that help, {name}?"),
+        None => String::new(),
+    };
+    let body = format!("_**{}**_:\n{}\n{}", w.word, meanings, formality);
     if let Err(e) = msg.channel_id.say(&ctx.http, body).await {
         println!("Error sending message: {:?}", e);
     }
@@ -91,7 +100,8 @@ impl EventHandler for Handler {
                                 "`help` - This help message.
 `new` - Gives you a new word of the day.
 `define <word>` - Pulls up the definition for a given word.
-`worddies` - Registers for a daily word in this channel."
+`worddies` - Registers for a daily word in this channel.
+`nickname <name>` - Sets a nickname for the bot to call you."
                             ),
                         )
                         .await
@@ -102,10 +112,27 @@ impl EventHandler for Handler {
                 "new" => send_new_word(self, ctx, msg).await,
                 "define" => match command.get(1) {
                     Some(input) => match words::get_word(input).await {
-                        Ok(w) => send_word(ctx, msg, w).await,
+                        Ok(w) => send_word(self, ctx, msg, w).await,
                         Err(e) => println!("unexpected error: {:?}", e),
                     },
                     None => println!("<word> input is required!"),
+                },
+                "nickname" => match msg.content.split("nickname").last() {
+                    Some(nickname) => {
+                        self.nicknames
+                            .write()
+                            .await
+                            .insert(msg.author.id, nickname.trim().to_string());
+
+                        if let Err(e) = msg
+                            .channel_id
+                            .say(&ctx.http, format!("Hi {nickname}!"))
+                            .await
+                        {
+                            println!("Error sending message: {:?}", e);
+                        }
+                    }
+                    None => println!("<nickname> is required!"),
                 },
                 input => println!("unknown command {}", input),
             }
