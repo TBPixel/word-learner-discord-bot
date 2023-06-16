@@ -1,9 +1,9 @@
-use color_eyre::eyre::ContextCompat;
+use color_eyre::eyre::{eyre, ContextCompat};
 use color_eyre::Result;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::io;
-use std::path::PathBuf;
+use std::io::{self, BufRead};
+use std::path::Path;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -25,46 +25,42 @@ pub struct Definition {
     pub definition: String,
 }
 
-pub fn get_line_count(file_path: &PathBuf) -> io::Result<u64> {
-    let mut reader = reader::BufReader::open(file_path)?;
-    let mut buffer = String::new();
+pub fn get_line_count(file_path: &Path) -> io::Result<u64> {
+    let lines = read_lines(file_path)?;
     let mut count: u64 = 0;
-
-    while let Some(_) = reader.read_line(&mut buffer) {
-        count += 1;
+    for line in lines {
+        if let Ok(_) = line {
+            count += 1;
+        }
     }
 
     Ok(count)
 }
 
-fn get_random_line(file_path: &PathBuf, total_lines: u64) -> io::Result<String> {
-    // Open the file
-    let mut reader = reader::BufReader::open(file_path)?;
-    let mut buffer = String::new();
-    let mut current_index: u64 = 0;
-
+fn get_random_line(file_path: &Path, total_lines: u64) -> Result<String> {
     // Generate a random index
     let mut rng = rand::thread_rng();
-    let target_index = rng.gen_range(0..total_lines);
-    let mut word = String::new();
+    let target_index: usize = rng.gen_range(0..total_lines).try_into()?;
 
-    while let Some(line) = reader.read_line(&mut buffer) {
-        if current_index != target_index {
-            current_index += 1;
+    let lines = read_lines(file_path)?;
+    let mut word = None;
+    for (index, line) in lines.enumerate() {
+        if index != target_index {
             continue;
         }
 
         if let Ok(w) = line {
-            word = w.clone();
+            word = Some(w);
         }
-
-        break;
     }
 
-    Ok(word.trim().to_string())
+    Ok(word
+        .ok_or(eyre!("failed to select a random line"))?
+        .trim()
+        .to_string())
 }
 
-pub async fn get_random_word(file_path: &PathBuf, total_lines: u64) -> Result<WordDefinition> {
+pub async fn get_random_word(file_path: &Path, total_lines: u64) -> Result<WordDefinition> {
     let word = get_random_line(file_path, total_lines)?;
 
     get_word(&word).await
@@ -83,34 +79,12 @@ pub async fn get_word(word: &str) -> Result<WordDefinition> {
     Ok(body.first().wrap_err("word not found")?.clone())
 }
 
-mod reader {
-    use std::{
-        fs::File,
-        io::{self, prelude::*},
-    };
-
-    pub struct BufReader {
-        reader: io::BufReader<File>,
-    }
-
-    impl BufReader {
-        pub fn open(path: impl AsRef<std::path::Path>) -> io::Result<Self> {
-            let file = File::open(path)?;
-            let reader = io::BufReader::new(file);
-
-            Ok(Self { reader })
-        }
-
-        pub fn read_line<'buf>(
-            &mut self,
-            buffer: &'buf mut String,
-        ) -> Option<io::Result<&'buf mut String>> {
-            buffer.clear();
-
-            self.reader
-                .read_line(buffer)
-                .map(|u| if u == 0 { None } else { Some(buffer) })
-                .transpose()
-        }
-    }
+// The output is wrapped in a Result to allow matching on errors
+// Returns an Iterator to the Reader of the lines of the file.
+fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<std::fs::File>>>
+where
+    P: AsRef<std::path::Path>,
+{
+    let file = std::fs::File::open(filename)?;
+    Ok(io::BufReader::new(file).lines())
 }

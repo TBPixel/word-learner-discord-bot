@@ -10,7 +10,7 @@
 #![allow(clippy::use_self)] // disabling use_self lints due to a bug where proc-macro's (such as serde::Serialize) can trigger it to hinted on type definitions
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use async_recursion::async_recursion;
 use color_eyre::eyre::{Result, WrapErr};
@@ -29,9 +29,9 @@ struct Handler {
 }
 
 impl Handler {
-    fn new(file_path: &PathBuf) -> Result<Handler> {
+    fn new(file_path: &Path) -> Result<Handler> {
         Ok(Handler {
-            words_file_path: file_path.clone(),
+            words_file_path: file_path.to_path_buf(),
             total_lines: words::get_line_count(file_path)?,
         })
     }
