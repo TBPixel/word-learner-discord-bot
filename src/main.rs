@@ -145,6 +145,19 @@ impl EventHandler for Handler {
                             .replace('\n', "")
                             .trim()
                             .to_string();
+                        if name.len() > 32 {
+                            if let Err(e) = msg
+                                .channel_id
+                                .say(
+                                    &ctx.http,
+                                    "**Error**: A nickname cannot be more than 32 characters long!",
+                                )
+                                .await
+                            {
+                                println!("Error sending message: {:?}", e);
+                            }
+                            return;
+                        }
 
                         if name.contains("http") {
                             if let Err(e) = msg
