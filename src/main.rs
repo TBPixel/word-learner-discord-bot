@@ -9,12 +9,12 @@
 )]
 #![allow(clippy::use_self)] // disabling use_self lints due to a bug where proc-macro's (such as serde::Serialize) can trigger it to hinted on type definitions
 
-use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
 
 use async_recursion::async_recursion;
 use color_eyre::eyre::{Result, WrapErr};
+use redis::AsyncCommands;
 use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::model::gateway::Ready;
@@ -27,45 +27,46 @@ mod words;
 struct Handler {
     words_file_path: PathBuf,
     total_lines: u64,
-    nicknames: RwLock<HashMap<UserId, String>>,
+    redis: redis::Client,
 }
 
 impl Handler {
-    fn new(file_path: &Path) -> Result<Handler> {
+    fn new(file_path: &Path, redis: redis::Client) -> Result<Handler> {
         Ok(Handler {
             words_file_path: file_path.to_path_buf(),
             total_lines: words::get_line_count(file_path)?,
-            nicknames: RwLock::new(HashMap::new()),
+            redis,
         })
     }
 }
 
 #[async_recursion]
-async fn send_new_word(handler: &Handler, ctx: Context, msg: Message) {
+async fn send_new_word(handler: &Handler, ctx: Context, msg: Message) -> Result<()> {
     match words::get_random_word(&handler.words_file_path, handler.total_lines).await {
         Ok(w) => send_word(handler, ctx, msg, w).await,
         Err(_) => send_new_word(handler, ctx, msg).await,
     }
 }
 
-async fn send_word(handler: &Handler, ctx: Context, msg: Message, w: WordDefinition) {
+async fn send_word(handler: &Handler, ctx: Context, msg: Message, w: WordDefinition) -> Result<()> {
     let meanings = w
         .meanings
         .iter()
         .map(|m| {
             format!(
-                "`{}`:\n  - {}",
+                "`{}`:{}",
                 m.part_of_speech,
                 m.definitions
                     .iter()
-                    .map(|d| format!("{}", d.definition))
+                    .map(|d| format!("\n- {}", d.definition))
                     .collect::<String>()
             )
         })
         .collect::<String>();
 
-    let nicknames = handler.nicknames.read().await;
-    let formality = match nicknames.get(&msg.author.id) {
+    let mut conn = handler.redis.get_async_connection().await?;
+    let nickname: Option<String> = conn.get(format!("nickname:{}", msg.author.id)).await.ok();
+    let formality = match nickname {
         Some(name) => format!("\n\nDoes that help, {name}?"),
         None => String::new(),
     };
@@ -73,6 +74,8 @@ async fn send_word(handler: &Handler, ctx: Context, msg: Message, w: WordDefinit
     if let Err(e) = msg.channel_id.say(&ctx.http, body).await {
         println!("Error sending message: {:?}", e);
     }
+
+    Ok(())
 }
 
 #[async_trait]
@@ -109,26 +112,39 @@ impl EventHandler for Handler {
                         println!("Error sending message: {:?}", e);
                     }
                 }
-                "new" => send_new_word(self, ctx, msg).await,
+                "new" => send_new_word(self, ctx, msg).await.unwrap(),
                 "define" => match command.get(1) {
                     Some(input) => match words::get_word(input).await {
-                        Ok(w) => send_word(self, ctx, msg, w).await,
+                        Ok(w) => send_word(self, ctx, msg, w).await.unwrap(),
                         Err(e) => println!("unexpected error: {:?}", e),
                     },
                     None => println!("<word> input is required!"),
                 },
                 "nickname" => match msg.content.split("nickname").last() {
                     Some(nickname) => {
-                        self.nicknames
-                            .write()
-                            .await
-                            .insert(msg.author.id, nickname.trim().to_string());
+                        let name = nickname
+                            .replace("#", "")
+                            .replace(r"\n", "")
+                            .trim()
+                            .to_string();
+                        if msg.mentions.len() > 0 {
+                            if let Err(e) = msg
+                                .channel_id
+                                .say(&ctx.http, "**Error**: A nickname cannot mention anyone!")
+                                .await
+                            {
+                                println!("Error sending message: {:?}", e);
+                            }
+                            return;
+                        }
 
-                        if let Err(e) = msg
-                            .channel_id
-                            .say(&ctx.http, format!("Hi {nickname}!"))
+                        let mut conn = self.redis.get_async_connection().await.unwrap();
+                        let _: () = conn
+                            .set(format!("nickname:{}", msg.author.id), &name)
                             .await
-                        {
+                            .unwrap();
+
+                        if let Err(e) = msg.channel_id.say(&ctx.http, format!("Hi {name}!")).await {
                             println!("Error sending message: {:?}", e);
                         }
                     }
@@ -163,8 +179,14 @@ async fn main() -> Result<()> {
         .with_max_level(tracing::Level::INFO)
         .init();
 
+    // Redis client
+    let redis_client = redis::Client::open(
+        env::var("REDIS_CONN").wrap_err("Expected a REDIS_CONN in the environment")?,
+    )?;
+
     // Configure the client with your Discord bot token in the environment.
-    let token = env::var("DISCORD_TOKEN").wrap_err("Expected a token in the environment")?;
+    let token =
+        env::var("DISCORD_TOKEN").wrap_err("Expected a DISCORD_TOKEN in the environment")?;
     // Set gateway intents, which decides what events the bot will be notified about
     let intents = GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::DIRECT_MESSAGES
@@ -173,7 +195,7 @@ async fn main() -> Result<()> {
     // Create a new instance of the Client, logging in as a bot. This will
     // automatically prepend your bot token with "Bot ", which is a requirement
     // by Discord for bot users.
-    let handler = Handler::new(&env::current_dir()?.join("words_alpha.txt"))?;
+    let handler = Handler::new(&env::current_dir()?.join("words_alpha.txt"), redis_client)?;
     let mut client = Client::builder(&token, intents)
         .event_handler(handler)
         .await
