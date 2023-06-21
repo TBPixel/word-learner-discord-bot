@@ -145,6 +145,17 @@ impl EventHandler for Handler {
                             .replace('\n', "")
                             .trim()
                             .to_string();
+                        if name.is_empty() {
+                            if let Err(e) = msg
+                                .channel_id
+                                .say(&ctx.http, "**Error**: A nickname must not be empty!")
+                                .await
+                            {
+                                println!("Error sending message: {:?}", e);
+                            }
+                            return;
+                        }
+
                         if name.len() > 32 {
                             if let Err(e) = msg
                                 .channel_id
