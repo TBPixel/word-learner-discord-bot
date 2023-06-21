@@ -102,9 +102,8 @@ impl EventHandler for Handler {
                             &ctx.http,
                             format!(
                                 "`help` - This help message.
-`new` - Gives you a new word of the day.
+`new <optional:number>` - Randomly defines a word. The optional number lets you do up to 10.
 `define <word>` - Pulls up the definition for a given word.
-`worddies` - Registers for a daily word in this channel.
 `nickname <name>` - Sets a nickname for the bot to call you."
                             ),
                         )
@@ -113,7 +112,25 @@ impl EventHandler for Handler {
                         println!("Error sending message: {:?}", e);
                     }
                 }
-                "new" => send_new_word(self, ctx, msg).await.unwrap(),
+                "new" => match command.get(1) {
+                    Some(number) => {
+                        let count = number.parse::<u8>().unwrap_or(1);
+                        if count > 10 {
+                            if let Err(e) = &msg
+                                .channel_id
+                                .say(&ctx.http, "cannot send more than 10 words at once!")
+                                .await
+                            {
+                                println!("Error sending message: {:?}", e);
+                            }
+                        }
+
+                        for _ in 0..count {
+                            send_new_word(self, ctx.clone(), msg.clone()).await.unwrap();
+                        }
+                    }
+                    None => send_new_word(self, ctx, msg).await.unwrap(),
+                },
                 "define" => match command.get(1) {
                     Some(input) => match words::get_word(input).await {
                         Ok(w) => send_word(self, ctx, msg, w).await.unwrap(),
