@@ -54,7 +54,7 @@ async fn send_word(handler: &Handler, ctx: Context, msg: Message, w: WordDefinit
         .iter()
         .map(|m| {
             format!(
-                "`{}`:{}",
+                "\n`{}`:{}",
                 m.part_of_speech,
                 m.definitions
                     .iter()
@@ -67,10 +67,10 @@ async fn send_word(handler: &Handler, ctx: Context, msg: Message, w: WordDefinit
     let mut conn = handler.redis.get_async_connection().await?;
     let nickname: Option<String> = conn.get(format!("nickname:{}", msg.author.id)).await.ok();
     let formality = match nickname {
-        Some(name) => format!("\n\nDoes that help, {name}?"),
+        Some(name) => format!("Does that help, {name}?"),
         None => String::new(),
     };
-    let body = format!("_**{}**_:\n{}\n{}", w.word, meanings, formality);
+    let body = format!("_**{}**_:{}\n\n{}", w.word, meanings, formality);
     if let Err(e) = msg.channel_id.say(&ctx.http, body).await {
         println!("Error sending message: {:?}", e);
     }
