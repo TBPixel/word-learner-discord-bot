@@ -86,7 +86,8 @@ impl EventHandler for Handler {
     // Event handlers are dispatched through a threadpool, and so multiple
     // events can be dispatched simultaneously.
     async fn message(&self, ctx: Context, msg: Message) {
-        if !msg.mentions_me(&ctx.http).await.unwrap_or(false) {
+        let is_bot_mentioned = msg.mentions_me(&ctx.http).await.unwrap_or(false);
+        if !is_bot_mentioned {
             return;
         }
 
@@ -127,7 +128,10 @@ impl EventHandler for Handler {
                             .replace(r"\n", "")
                             .trim()
                             .to_string();
-                        if msg.mentions.len() > 0 {
+
+                        // we allow exactly one mention because the bot has to be
+                        // mentioned to reply.
+                        if msg.mentions.len() != 1 {
                             if let Err(e) = msg
                                 .channel_id
                                 .say(&ctx.http, "**Error**: A nickname cannot mention anyone!")
