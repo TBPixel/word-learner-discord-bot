@@ -126,6 +126,8 @@ impl EventHandler for Handler {
                         let name = nickname
                             .replace("#", "")
                             .replace(r"\n", "")
+                            .replace(r"http:\\", "")
+                            .replace(r"https:\\", "")
                             .trim()
                             .to_string();
 
