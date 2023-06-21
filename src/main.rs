@@ -142,7 +142,7 @@ impl EventHandler for Handler {
                     Some(nickname) => {
                         let name = nickname
                             .replace("#", "")
-                            .replace(r"\n", "")
+                            .replace('\n', "")
                             .trim()
                             .to_string();
 
