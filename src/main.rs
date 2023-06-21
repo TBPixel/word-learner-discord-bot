@@ -143,6 +143,7 @@ impl EventHandler for Handler {
                         let name = nickname
                             .replace("#", "")
                             .replace('\n', "")
+                            .replace('`', r"\`")
                             .trim()
                             .to_string();
                         if name.is_empty() {
