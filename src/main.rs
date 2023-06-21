@@ -126,11 +126,19 @@ impl EventHandler for Handler {
                         let name = nickname
                             .replace("#", "")
                             .replace(r"\n", "")
-                            .replace(r"http:\\", "")
-                            .replace(r"https:\\", "")
                             .trim()
                             .to_string();
 
+                        if name.contains("http") {
+                            if let Err(e) = msg
+                                .channel_id
+                                .say(&ctx.http, "**Error**: A nickname cannot contain a link!")
+                                .await
+                            {
+                                println!("Error sending message: {:?}", e);
+                            }
+                            return;
+                        }
                         // we allow exactly one mention because the bot has to be
                         // mentioned to reply.
                         if msg.mentions.len() != 1 {
