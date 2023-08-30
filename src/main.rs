@@ -22,6 +22,7 @@ use serenity::model::prelude::*;
 use serenity::prelude::*;
 use words::WordDefinition;
 
+mod dice;
 mod words;
 
 struct Handler {
@@ -64,13 +65,18 @@ async fn send_word(handler: &Handler, ctx: Context, msg: Message, w: WordDefinit
         })
         .collect::<String>();
 
+    let text = format!("_**{}**_:{}", w.word, meanings);
+    send_msg(handler, ctx, msg, text).await
+}
+
+async fn send_msg(handler: &Handler, ctx: Context, msg: Message, text: String) -> Result<()> {
     let mut conn = handler.redis.get_async_connection().await?;
     let nickname: Option<String> = conn.get(format!("nickname:{}", msg.author.id)).await.ok();
     let formality = match nickname {
         Some(name) => format!("Does that help, {name}?"),
         None => String::new(),
     };
-    let body = format!("_**{}**_:{}\n\n{}", w.word, meanings, formality);
+    let body = format!("{}\n\n{}", text, formality);
     if let Err(e) = msg.channel_id.say(&ctx.http, body).await {
         println!("Error sending message: {:?}", e);
     }
@@ -104,6 +110,7 @@ impl EventHandler for Handler {
                                 "`help` - This help message.
 `new <optional:number>` - Randomly defines a word. The optional number lets you do up to 10.
 `define <word>` - Pulls up the definition for a given word.
+`roll <count>d<sides>` - Roll a dice, ex. `roll 1d20`.
 `nickname <name>` - Sets a nickname for the bot to call you."
                             ),
                         )
@@ -137,6 +144,31 @@ impl EventHandler for Handler {
                         Err(e) => println!("unexpected error: {:?}", e),
                     },
                     None => println!("<word> input is required!"),
+                },
+                "roll" => match command.get(1) {
+                    Some(input) => {
+                        let args: Vec<&str> = input.split("d").collect();
+                        let count: i32 = args.first().unwrap().parse().unwrap();
+                        let sides: i32 = args.last().unwrap().parse().unwrap();
+                        let rolls = dice::roll_dice(count, sides);
+
+                        let total = rolls.iter().sum::<i32>();
+                        let total = {
+                            if count > 1 {
+                                format!(" = **{}**", total)
+                            } else {
+                                String::new()
+                            }
+                        };
+                        let rolls = rolls
+                            .iter()
+                            .map(|i| i.to_string())
+                            .collect::<Vec<String>>()
+                            .join(" + ");
+                        let text = format!("`rolls {}`: {}{}", input, rolls, total);
+                        send_msg(self, ctx, msg, text).await.unwrap()
+                    }
+                    None => println!("<count>d<sides> input is required!"),
                 },
                 "nickname" => match msg.content.split("nickname").last() {
                     Some(nickname) => {
