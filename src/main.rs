@@ -160,11 +160,17 @@ impl EventHandler for Handler {
                                 String::new()
                             }
                         };
-                        let rolls = rolls
-                            .iter()
-                            .map(|i| i.to_string())
-                            .collect::<Vec<String>>()
-                            .join(" + ");
+                        let rolls = {
+                            if count > 100 {
+                                "(truncated)".to_string()
+                            } else {
+                                rolls
+                                    .iter()
+                                    .map(|i| i.to_string())
+                                    .collect::<Vec<String>>()
+                                    .join(" + ")
+                            }
+                        };
                         let text = format!("`rolls {}`: {}{}", input, rolls, total);
                         send_msg(self, ctx, msg, text).await.unwrap()
                     }
